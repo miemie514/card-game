@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>3v3 卡牌对战</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Microsoft YaHei", sans-serif; }
+  body { background: linear-gradient(135deg, #0f0c29, #302b63, #24243e); color: #fff; height: 100vh; overflow: hidden; }
+  
+  .screen { display: none; padding: 20px; max-width: 1200px; margin: 0 auto; height: 100vh; overflow-y: auto; }
+  .screen.active { display: block; animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  h1 { text-align: center; margin: 20px 0; color: #ff2a75; text-shadow: 0 0 10px rgba(255,42,117,0.5); letter-spacing: 2px; }
+  .glass-box { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 20px; margin: 12px 0; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+  input { padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: #fff; width: 100%; margin: 8px 0; outline: none; transition: 0.3s; }
+  input:focus { border-color: #ff2a75; box-shadow: 0 0 8px rgba(255,42,117,0.5); }
+  button { padding: 12px 20px; border: none; border-radius: 8px; background: linear-gradient(45deg, #ff2a75, #ff6b6b); color: #fff; cursor: pointer; font-weight: bold; font-size: 15px; margin: 6px 6px 6px 0; box-shadow: 0 4px 15px rgba(255,42,117,0.4); transition: 0.2s; }
+  button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255,42,117,0.6); }
+  button:disabled { background: #555; box-shadow: none; cursor: not-allowed; transform: none; }
+  button.sec { background: linear-gradient(45deg, #00c6ff, #0072ff); box-shadow: 0 4px 15px rgba(0,198,255,0.4); }
+  button.ai { background: linear-gradient(45deg, #10b981, #047857); box-shadow: 0 4px 15px rgba(16,185,129,0.4); }
+  button.danger { background: linear-gradient(45deg, #ff4d4d, #cc0000); box-shadow: 0 4px 15px rgba(255,77,77,0.4); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  
+  .role-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr)); gap: 12px; }
+  .role-card { background: rgba(0,0,0,0.4); border-radius: 12px; padding: 12px; cursor: pointer; border: 2px solid transparent; text-align: center; transition: 0.3s; position: relative; overflow: hidden; }
+  .role-card:hover { border-color: #ff2a75; transform: translateY(-5px); box-shadow: 0 5px 20px rgba(255,42,117,0.3); }
+  .role-card.selected { border-color: #ffd700; background: rgba(255, 215, 0, 0.1); box-shadow: 0 0 20px rgba(255,215,0,0.4); }
+  .role-card.taken { opacity: 0.4; cursor: not-allowed; filter: grayscale(1); }
+  .role-avatar { width: 60px; height: 60px; border-radius: 50%; margin: 0 auto 10px auto; border: 2px solid #fff; background: #302b63; }
+  .role-name { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
+  .role-tag { font-size: 12px; color: #ffd700; background: rgba(255,215,0,0.1); padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 6px; }
+  .role-desc { font-size: 11px; color: #ccc; line-height: 1.4; text-align: left; }
+
+  /* 战斗桌游布局 */
+  #screen-game { padding: 0; max-width: none; overflow: hidden; }
+  #game-board { position: relative; width: 100vw; height: 100vh; background: radial-gradient(circle at center, #1e1842 0%, #0a0815 100%); }
+  
+  .top-bar { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 20px; z-index: 20; background: rgba(0,0,0,0.6); padding: 8px 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); }
+  .turn-tip { color: #ffd700; font-weight: bold; font-size: 16px; text-shadow: 0 0 10px #ffd700; }
+  
+  .corner { position: absolute; display: flex; flex-direction: column; gap: 10px; z-index: 10; }
+  .top-left { top: 80px; left: 20px; align-items: flex-start; }
+  .top-right { top: 80px; right: 20px; align-items: flex-end; }
+  .bottom-left { bottom: 160px; left: 20px; align-items: flex-start; }
+  .bottom-right { bottom: 160px; right: 20px; align-items: flex-end; }
+
+  .player-card { background: rgba(0,0,0,0.6); border: 2px solid #444; border-radius: 12px; padding: 8px 10px; width: 180px; transition: 0.3s; position: relative; display: flex; gap: 10px; cursor: pointer; }
+  .player-card:hover { background: rgba(255,255,255,0.1); }
+  .player-card.turn { border-color: #ffd700; box-shadow: 0 0 20px rgba(255,215,0,0.6); transform: scale(1.05); z-index: 11; }
+  .player-card.targetable { border-color: #38ef7d; box-shadow: 0 0 20px rgba(56,239,125,0.8); animation: pulse 1.5s infinite; }
+  .player-card.dead { opacity: 0.3; filter: grayscale(1); pointer-events: none; }
+  
+  .p-avatar { width: 40px; height: 40px; border-radius: 50%; background: #111; border: 2px solid #555; }
+  .p-info { flex: 1; overflow: hidden; }
+  .hp-bar { height: 6px; background: rgba(0,0,0,0.8); border-radius: 3px; margin-top: 4px; overflow: hidden; }
+  .hp-fill { height: 100%; background: linear-gradient(90deg, #11998e, #38ef7d); transition: width .3s; }
+  .status-icons { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+  .status-icon { font-size: 12px; background: rgba(255,255,255,0.1); padding: 2px 4px; border-radius: 4px; }
+
+  .action-bubble { position: absolute; top: -45px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.9); border: 2px solid #ffd700; border-radius: 8px; padding: 4px 10px; display: flex; align-items: center; gap: 6px; white-space: nowrap; animation: popIn 0.4s ease-out forwards; z-index: 999; pointer-events: none; }
+  .action-bubble .b-icon { font-size: 18px; }
+  .action-bubble .b-name { font-size: 13px; color: #ffd700; font-weight: bold; }
+  
+  .bottom-area { position: absolute; bottom: 0; left: 0; width: 100%; height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 10px; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); z-index: 20; pointer-events: none; }
+  .btn-wrapper { pointer-events: auto; margin-bottom: 8px; display: flex; gap: 10px; }
+  
+  .hand-wrapper { pointer-events: auto; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 90%; }
+  .card { width: 80px; height: 110px; flex: none; background: linear-gradient(160deg, #2c3e70, #0f3460); border-radius: 8px; padding: 6px; cursor: pointer; border: 2px solid transparent; display: flex; flex-direction: column; justify-content: space-between; font-size: 12px; transition: 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+  .card:hover { border-color: #ffd700; transform: translateY(-10px); box-shadow: 0 10px 20px rgba(255,215,0,0.3); }
+  .card.disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
+  .card.disabled:hover { transform: none; border-color: transparent; }
+  .card .val { font-size: 20px; font-weight: bold; text-align: center; }
+  .card.attack { background: linear-gradient(160deg, #7a1f2b, #300a0e); border-color: #ff4d4d; }
+  .card.heal { background: linear-gradient(160deg, #1f7a4d, #0b301e); border-color: #38ef7d; }
+  .card.shield { background: linear-gradient(160deg, #1f5f7a, #0b2630); border-color: #00c6ff; }
+  .card.draw { background: linear-gradient(160deg, #6b4a1f, #30220b); border-color: #ffb84d; }
+  .card.poison { background: linear-gradient(160deg, #4a0f5c, #1a0321); border-color: #b200ff; }
+  
+  @keyframes pulse { 0% { box-shadow: 0 0 10px rgba(56,239,125,0.3); } 50% { box-shadow: 0 0 30px rgba(56,239,125,0.8); } 100% { box-shadow: 0 0 10px rgba(56,239,125,0.3); } }
+  @keyframes popIn { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); backdrop-filter: blur(5px); display: flex; justify-content: center; align-items: center; z-index: 9999; opacity: 0; pointer-events: none; transition: 0.3s; }
+  .modal-overlay.active { opacity: 1; pointer-events: auto; }
+  .modal-content { background: #16213e; border: 2px solid #ff2a75; border-radius: 16px; padding: 20px; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 0 40px rgba(255,42,117,0.4); position: relative; transform: translateY(20px); transition: 0.3s; }
+  .modal-overlay.active .modal-content { transform: translateY(0); }
+  .modal-title { font-size: 20px; color: #ffd700; margin-bottom: 10px; }
+  .modal-desc { font-size: 14px; color: #ccc; line-height: 1.5; margin-bottom: 20px; text-align: left; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px;}
+  .modal-close { position: absolute; top: 10px; right: 15px; font-size: 24px; cursor: pointer; color: #aaa; }
+  .modal-close:hover { color: #fff; }
+
+  .log-container { position: absolute; top: 80px; right: 240px; width: 250px; background: rgba(0,0,0,0.5); border-radius: 8px; padding: 10px; font-size: 11px; height: 120px; overflow-y: auto; color: #aaa; z-index: 10; }
+
+  @keyframes floatUp { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-50px) scale(1.5); opacity: 0; } }
+  .damage-float { position: fixed; color: #ff4d4d; font-size: 28px; font-weight: bold; text-shadow: 0 2px 4px #000; pointer-events: none; z-index: 999; animation: floatUp 0.8s ease-out forwards; }
+</style>
+</head>
+<body>
+
+<div id="screen-login" class="screen active">
+  <h1>3v3 卡牌对战</h1>
+  <div class="glass-box">
+    <input id="input-name" placeholder="输入你的昵称" maxlength="12">
+    <button onclick="doAIMatch()" class="ai" style="width:100%; margin-bottom:12px;">单机 AI 对战 (2v2)</button>
+    <button onclick="doCreate()" style="width:100%">创建联机房间</button>
+    <input id="input-room" placeholder="输入6位房间号加入" maxlength="6" style="margin-top:20px">
+    <button onclick="doJoin()" class="sec" style="width:100%">加入房间</button>
+    <div id="login-msg" class="tip" style="text-align:center;color:#ffd700;margin-top:10px;"></div>
+  </div>
+</div>
+
+<div id="screen-room" class="screen">
+  <h1>房间 <span id="room-id-show" style="color:#00c6ff"></span></h1>
+  <div class="glass-box">
+    <div class="row">
+      <button id="btn-start" onclick="doStart()" style="flex:1">开始游戏</button>
+      <button onclick="location.reload()" class="sec" style="flex:1">离开房间</button>
+    </div>
+    <div id="room-msg" class="tip"></div>
+  </div>
+  
+  <div class="glass-box">
+    <h3 style="margin-bottom:10px;color:#00c6ff">队伍分配（点击按钮加入）</h3>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <!-- A队 -->
+      <div style="flex:1; min-width:250px; border: 2px solid #00c6ff; border-radius:12px; padding:10px; background:rgba(0,198,255,0.05);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <h4 style="color:#00c6ff; margin:0;">A队 (<span id="count-A">0</span>/3)</h4>
+          <button onclick="switchTeam('A')" class="sec" style="padding:4px 8px; font-size:12px; margin:0;">加入A队</button>
+        </div>
+        <div id="team-A-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+      </div>
+      <!-- B队 -->
+      <div style="flex:1; min-width:250px; border: 2px solid #ff2a75; border-radius:12px; padding:10px; background:rgba(255,42,117,0.05);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <h4 style="color:#ff2a75; margin:0;">B队 (<span id="count-B">0</span>/3)</h4>
+          <button onclick="switchTeam('B')" style="padding:4px 8px; font-size:12px; margin:0;">加入B队</button>
+        </div>
+        <div id="team-B-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="glass-box">
+    <h3 style="margin-bottom:10px;color:#00c6ff">选择角色（不可重复）</h3>
+    <div id="role-grid" class="role-grid"></div>
+  </div>
+</div>
+
+<div id="screen-game" class="screen">
+  <div id="game-board">
+    <div class="top-bar">
+      <div id="turn-tip" class="turn-tip">等待中...</div>
+      <button onclick="doSurrender()" class="danger" style="margin:0; padding:6px 12px; font-size:12px;">投降</button>
+    </div>
+    
+    <div class="log-container"><div id="log" style="height:100%; overflow-y:auto;"></div></div>
+
+    <div id="corner-tl" class="corner top-left"></div>
+    <div id="corner-tr" class="corner top-right"></div>
+    <div id="corner-bl" class="corner bottom-left"></div>
+    <div id="corner-br" class="corner bottom-right"></div>
+
+    <div class="bottom-area">
+      <div class="btn-wrapper">
+        <button id="btn-skill" onclick="doSkill()" style="background:linear-gradient(45deg,#9d50bb,#6e48aa)">释放技能</button>
+        <button id="btn-cancel" onclick="cancelAction()" style="display:none; background:linear-gradient(45deg,#ff2a75,#ff6b6b);">取消</button>
+        <button id="btn-end" onclick="doEnd()" class="sec" style="padding:8px 30px;">结束回合</button>
+      </div>
+      <div class="hand-wrapper" id="hand"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="info-modal">
+  <div class="modal-content">
+    <span class="modal-close" onclick="closeModal('info-modal')">&times;</span>
+    <div style="display:flex; align-items:center; justify-content:center; gap:15px; margin-bottom:15px;">
+      <img id="info-avatar" style="width:60px; height:60px; border-radius:50%; border:2px solid #fff; background:#111;">
+      <div style="text-align:left;">
+        <div id="info-name" style="font-size:18px; font-weight:bold;"></div>
+        <div id="info-role" style="font-size:14px; color:#00c6ff;"></div>
+      </div>
+    </div>
+    <div class="modal-desc" id="info-desc"></div>
+    <div class="modal-desc" id="info-status" style="margin-bottom:0; background:rgba(255,255,255,0.05);"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="surrender-modal">
+  <div class="modal-content">
+    <div class="modal-title">投降请求</div>
+    <div class="modal-desc" id="surrender-text">你的队友发起了投降，是否同意？</div>
+    <div class="row" style="justify-content:center;">
+      <button onclick="voteSurrender(true)" class="danger">同意</button>
+      <button onclick="voteSurrender(false)" class="sec">拒绝</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="gameover-modal">
+  <div class="modal-content" style="border-color:#ffd700;">
+    <div id="gameover-title" style="font-size:48px; font-weight:bold; margin-bottom:15px; text-shadow:0 0 20px currentColor;">胜利</div>
+    <div id="gameover-subtitle" style="font-size:16px; color:#ccc; margin-bottom:30px;">恭喜你获得了胜利！</div>
+    <button onclick="goBackToRoom()" class="sec" style="padding:12px 40px; font-size:18px;">返回房间</button>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+let state = null;
+let myId = null;
+let myHand = [];
+let pendingAction = null; 
+let lastHps = {}; 
+
+const ROLE_META = {
+  warrior:   { name:"战士", tag:"坦克", avatar: "warrior", desc: "被动：受伤-1。主动：对敌方造成3伤害(CD2)" },
+  guard:     { name:"守卫", tag:"坦克", avatar: "knight", desc: "被动：手牌上限+2。主动：替队友承伤(CD3)" },
+  mage:      { name:"法师", tag:"输出", avatar: "mage", desc: "被动：首张攻击牌+2伤。主动：弃1抽2(CD2)" },
+  assassin:  { name:"刺客", tag:"输出", avatar: "ninja", desc: "被动：打最低血+2伤。主动：本回合+1伤(CD2)" },
+  berserker: { name:"狂战士", tag:"输出", avatar: "viking", desc: "被动：血越低伤越高。主动：自损2，本回合+3伤(CD2)" },
+  priest:    { name:"牧师", tag:"辅助", avatar: "angel", desc: "被动：回合回1血。主动：为队友回3血(CD2)" },
+  bard:      { name:"吟游诗人", tag:"辅助", avatar: "musician", desc: "被动：回合末抽1牌。主动：让队友下回合多抽1牌(CD2)" },
+  iceMage:   { name:"冰法", tag:"控制", avatar: "snowman", desc: "被动：受击者少抽牌。主动：目标跳过出牌(CD3)" },
+  rogue:     { name:"盗贼", tag:"控制", avatar: "thief", desc: "被动：击杀偷牌。主动：弃敌方1张牌(CD2)" },
+  gambler:   { name:"赌徒", tag:"特殊", avatar: "joker", desc: "被动：伤害随机±2。主动：随机1~6伤害(CD3)" }
+};
+
+function getAvatarUrl(seed) { return `https://api.dicebear.com/7.x/open-peeps/svg?seed=${seed}&backgroundColor=transparent`; }
+function show(id) { document.querySelectorAll(".screen").forEach(s => s.classList.remove("active")); document.getElementById(id).classList.add("active"); }
+function msg(id, t) { document.getElementById(id).innerText = t; }
+function closeModal(id) { document.getElementById(id).classList.remove("active"); }
+
+function doAIMatch() {
+  const name = document.getElementById("input-name").value.trim();
+  if (!name) return msg("login-msg", "请输入昵称");
+  socket.emit("startAIGame", { name }, res => {
+    if (!res.ok) return msg("login-msg", res.msg);
+    document.getElementById("room-id-show").innerText = "AI " + res.roomId;
+    show("screen-room");
+  });
+}
+function doCreate() {
+  const name = document.getElementById("input-name").value.trim();
+  if (!name) return msg("login-msg", "请输入昵称");
+  socket.emit("createRoom", { name }, res => {
+    if (!res.ok) return msg("login-msg", res.msg);
+    document.getElementById("room-id-show").innerText = "#" + res.roomId;
+    show("screen-room");
+  });
+}
+function doJoin() {
+  const name = document.getElementById("input-name").value.trim();
+  const rid = document.getElementById("input-room").value.trim();
+  if (!name) return msg("login-msg", "请输入昵称");
+  if (!rid) return msg("login-msg", "请输入房间号");
+  socket.emit("joinRoom", { name, roomId: rid }, res => {
+    if (!res.ok) return msg("login-msg", res.msg);
+    document.getElementById("room-id-show").innerText = "#" + res.roomId;
+    show("screen-room");
+  });
+}
+function doStart() { socket.emit("startGame", {}, res => { if (!res.ok) msg("room-msg", res.msg); }); }
+function selectRole(roleId) { socket.emit("selectRole", { roleId }, res => { if (!res.ok) msg("room-msg", res.msg); else msg("room-msg", ""); }); }
+
+function switchTeam(team) { socket.emit("switchTeam", { team }, res => { if (!res.ok) msg("room-msg", res.msg); else msg("room-msg", ""); }); }
+function addAI(team) { socket.emit("addAI", { team }); }
+function removeAI(aiId) { socket.emit("removeAI", { aiId }); }
+function goBackToRoom() { closeModal('gameover-modal'); socket.emit("backToRoom"); }
+
+function buildRoleGrid() {
+  const grid = document.getElementById("role-grid");
+  grid.innerHTML = "";
+  Object.entries(ROLE_META).forEach(([id, meta]) => {
+    const taken = state.players.some(p => p.roleId === id && p.id !== myId);
+    const mine = state.players.find(p => p.id === myId);
+    const selected = mine && mine.roleId === id;
+    const div = document.createElement("div");
+    div.className = "role-card" + (selected ? " selected" : "") + (taken ? " taken" : "");
+    div.innerHTML = `
+      <img class="role-avatar" src="${getAvatarUrl(meta.avatar)}">
+      <div class="role-name">${meta.name}</div>
+      <div class="role-tag">${meta.tag}</div>
+      <div class="role-desc">${meta.desc}</div>
+    `;
+    if (!taken) div.onclick = () => selectRole(id);
+    grid.appendChild(div);
+  });
+}
+
+function createRoomPlayerSlot(p, isHost) {
+  const div = document.createElement("div");
+  div.className = "player";
+  const role = p.roleId ? ROLE_META[p.roleId] : null;
+  const avatar = role ? getAvatarUrl(role.avatar) : getAvatarUrl("unknown");
+  
+  div.innerHTML = `
+    <img class="p-avatar" src="${avatar}">
+    <div class="p-info"><b>${p.name}</b>${p.isAI ? " (AI)" : ""}<br><span style="color:#00c6ff;font-size:12px">${role ? role.name : "未选角色"}</span></div>
+    <div>${p.id === state.host ? "👑" : ""}${p.id === myId ? " (你)" : ""}</div>
+  `;
+  
+  if (isHost && p.isAI) {
+    const kickBtn = document.createElement("button");
+    kickBtn.innerText = "移除";
+    kickBtn.style.padding = "2px 6px";
+    kickBtn.style.fontSize = "12px";
+    kickBtn.style.margin = "0 0 0 auto";
+    kickBtn.className = "danger";
+    kickBtn.onclick = () => removeAI(p.id);
+    div.appendChild(kickBtn);
+  }
+  return div;
+}
+
+function renderRoom() {
+  buildRoleGrid();
+  
+  const isHost = state.host === myId;
+  const teamA = state.players.filter(p => p.team === "A");
+  const teamB = state.players.filter(p => p.team === "B");
+  
+  document.getElementById("count-A").innerText = teamA.length;
+  document.getElementById("count-B").innerText = teamB.length;
+  
+  const listA = document.getElementById("team-A-list");
+  listA.innerHTML = "";
+  teamA.forEach(p => listA.appendChild(createRoomPlayerSlot(p, isHost)));
+  if (isHost && teamA.length < 3) {
+    const btn = document.createElement("button");
+    btn.className = "ai"; btn.innerText = "+ 增加 AI 队友";
+    btn.style.padding = "8px"; btn.style.fontSize = "14px"; btn.style.width = "100%";
+    btn.onclick = () => addAI("A");
+    listA.appendChild(btn);
+  }
+  
+  const listB = document.getElementById("team-B-list");
+  listB.innerHTML = "";
+  teamB.forEach(p => listB.appendChild(createRoomPlayerSlot(p, isHost)));
+  if (isHost && teamB.length < 3) {
+    const btn = document.createElement("button");
+    btn.className = "ai"; btn.innerText = "+ 增加 AI 队友";
+    btn.style.padding = "8px"; btn.style.fontSize = "14px"; btn.style.width = "100%";
+    btn.onclick = () => addAI("B");
+    listB.appendChild(btn);
+  }
+
+  const btn = document.getElementById("btn-start");
+  const canStart = teamA.length > 0 && teamA.length === teamB.length && state.players.every(p => p.roleId);
+  btn.disabled = !canStart;
+  
+  if (btn.disabled) {
+    if (teamA.length !== teamB.length) msg("room-msg", "两队人数必须相等才能开始");
+    else if (teamA.length === 0) msg("room-msg", "请至少添加1名玩家或AI到队伍中");
+    else if (!state.players.every(p => p.roleId)) msg("room-msg", "还有玩家/AI未选择角色");
+    else msg("room-msg", "");
+  } else {
+    msg("room-msg", "准备就绪，房主可以点击开始！");
+  }
+  
+  if (state.players.length >= 1) show("screen-room");
+}
+
+function showDamageFloat(targetId, damage) {
+  const el = document.querySelector(`[data-pid="${targetId}"]`);
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  const float = document.createElement("div");
+  float.className = "damage-float"; float.innerText = `-${damage}`;
+  float.style.left = (rect.left + rect.width / 2 - 20) + "px";
+  float.style.top = (rect.top + rect.height / 2) + "px";
+  document.body.appendChild(float);
+  setTimeout(() => float.remove(), 800);
+}
+
+function showInfo(pId) {
+  const p = state.players.find(x => x.id === pId);
+  if (!p || !p.roleId) return;
+  const meta = ROLE_META[p.roleId];
+  
+  document.getElementById("info-avatar").src = getAvatarUrl(meta.avatar);
+  document.getElementById("info-name").innerText = p.name;
+  document.getElementById("info-role").innerText = `${meta.name} (${meta.tag})`;
+  document.getElementById("info-desc").innerHTML = `<b>技能：</b><br>${meta.desc}`;
+  
+  let statHtml = `<b>当前状态：</b><br>❤️ 血量：${p.hp}/${p.maxHp}<br>🃏 手牌：${p.handCount} 张`;
+  if (p.shield > 0) statHtml += `<br>🛡️ 护盾：${p.shield}`;
+  if (p.poison > 0) statHtml += `<br>☠️ 中毒：剩余 ${p.poison} 回合`;
+  if (p.tauntTarget) statHtml += `<br>🛡️ 正在守护队友`;
+  document.getElementById("info-status").innerHTML = statHtml;
+
+  document.getElementById("info-modal").classList.add("active");
+}
+
+function createPlayerCardHtml(p) {
+  const role = p.roleId ? ROLE_META[p.roleId] : null;
+  const avatar = role ? getAvatarUrl(role.avatar) : getAvatarUrl("unknown");
+  const pct = Math.max(0, p.hp / p.maxHp * 100);
+  
+  let iconsHtml = "";
+  if (p.shield > 0) iconsHtml += `<span class="status-icon">🛡️${p.shield}</span>`;
+  if (p.poison > 0) iconsHtml += `<span class="status-icon">☠️${p.poison}</span>`;
+  if (p.tauntTarget) iconsHtml += `<span class="status-icon">🛡️守护</span>`;
+  
+  let bubbleHtml = "";
+  if (state.lastAction && state.lastAction.actorId === p.id) {
+    bubbleHtml = `
+      <div class="action-bubble">
+        <span class="b-icon">${state.lastAction.icon}</span>
+        <span class="b-name">${state.lastAction.cardName}</span>
+      </div>
+    `;
+  }
+  
+  return `
+    <div class="player-card ${p.id === state.currentTurnId ? 'turn' : ''} ${!p.isAlive ? 'dead' : ''}" data-pid="${p.id}">
+      ${bubbleHtml}
+      <img class="p-avatar" src="${avatar}">
+      <div class="p-info">
+        <div style="font-weight:bold; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p.name}</div>
+        <div style="display:flex; justify-content:space-between; font-size:11px; margin-top:2px;">
+          <span style="color:#00c6ff;">${role?role.name:""}</span>
+          <span>❤️ ${p.hp}/${p.maxHp}</span>
+        </div>
+        <div class="hp-bar"><div class="hp-fill" style="width:${pct}%"></div></div>
+        <div class="status-icons">${iconsHtml}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderGame() {
+  show("screen-game");
+  
+  const me = state.players.find(p => p.id === myId);
+  const myTeam = me ? me.team : "A";
+  const isMyTurn = state.currentTurnId === myId;
+
+  const cornerTl = document.getElementById("corner-tl");
+  const cornerTr = document.getElementById("corner-tr");
+  const cornerBl = document.getElementById("corner-bl");
+  const cornerBr = document.getElementById("corner-br");
+
+  const allies = state.players.filter(p => p.team === myTeam && p.id !== myId);
+  const enemies = state.players.filter(p => p.team !== myTeam);
+  
+  let tlHtml = "";
+  let trHtml = "";
+  enemies.forEach((e, i) => {
+    if (i % 2 === 0) tlHtml += createPlayerCardHtml(e);
+    else trHtml += createPlayerCardHtml(e);
+  });
+  cornerTl.innerHTML = tlHtml;
+  cornerTr.innerHTML = trHtml;
+
+  let brHtml = "";
+  allies.forEach(a => brHtml += createPlayerCardHtml(a));
+  cornerBr.innerHTML = brHtml;
+
+  cornerBl.innerHTML = createPlayerCardHtml(me);
+
+  document.querySelectorAll('.player-card').forEach(el => {
+    const pId = el.dataset.pid;
+    const p = state.players.find(x => x.id === pId);
+    if (!p || !p.isAlive) return;
+    
+    if (pendingAction) {
+      let isTargetable = false;
+      if (pendingAction.type === "card") {
+        const cType = pendingAction.data.type;
+        if (["attack", "poison"].includes(cType) && p.team !== myTeam) isTargetable = true;
+        if (["heal", "shield"].includes(cType) && p.team === myTeam) isTargetable = true;
+      } else if (pendingAction.type === "skill") {
+        const targetType = { warrior:"enemy", guard:"ally", mage:"self", assassin:"self", berserker:"self", priest:"ally", bard:"ally", iceMage:"enemy", rogue:"enemy", gambler:"enemy" }[me.roleId];
+        if (targetType === "enemy" && p.team !== myTeam) isTargetable = true;
+        if (targetType === "ally" && p.team === myTeam) isTargetable = true;
+        if (targetType === "self" && p.id === myId) isTargetable = true;
+      }
+      
+      if (isTargetable) {
+        el.classList.add("targetable");
+        el.onclick = () => { resolveTarget(p.id); };
+      } else {
+        el.onclick = () => showInfo(p.id); 
+      }
+    } else {
+      el.onclick = () => showInfo(p.id);
+    }
+  });
+
+  if (pendingAction) {
+    msg("turn-tip", "🎯 请在场上选择目标！");
+    document.getElementById("btn-end").disabled = true;
+    document.getElementById("btn-cancel").style.display = "inline-block";
+    document.getElementById("btn-skill").disabled = true;
+  } else {
+    const isAITurn = state.players.find(p => p.id === state.currentTurnId)?.id.startsWith("ai_");
+    msg("turn-tip", isMyTurn ? "👉 轮到你了！" : (isAITurn ? "🤖 AI 正在思考..." : `等待 ${playerName(state.currentTurnId)} 行动...`));
+    document.getElementById("btn-end").disabled = !isMyTurn;
+    document.getElementById("btn-cancel").style.display = "none";
+    document.getElementById("btn-skill").disabled = !isMyTurn || (me && me.cooldowns.active > 0);
+    document.getElementById("btn-skill").innerText = (me && me.cooldowns.active > 0) ? `冷却(${me.cooldowns.active})` : "释放技能";
+  }
+
+  const handBox = document.getElementById("hand");
+  handBox.innerHTML = "";
+  (myHand || []).forEach(card => {
+    const d = document.createElement("div");
+    d.className = "card " + card.type; 
+    
+    let isDisabled = false;
+    if (!isMyTurn || pendingAction) {
+      isDisabled = true;
+    } else if (card.type === "attack" && me.attackPlayed) {
+      isDisabled = true;
+    }
+
+    if (isDisabled) d.classList.add("disabled");
+    
+    let icon = card.type === "attack" ? "⚔️" : card.type === "heal" ? "💚" : card.type === "shield" ? "🛡️" : card.type === "poison" ? "☠️" : "🎴";
+    d.innerHTML = `
+      <div style="text-align:center;font-size:18px;">${icon}</div>
+      <div style="text-align:center;font-weight:bold">${card.name}</div>
+      <div class="val">${card.value}</div>
+    `;
+    if (!isDisabled) d.onclick = () => clickCard(card);
+    handBox.appendChild(d);
+  });
+
+  const log = document.getElementById("log");
+  log.innerHTML = (state.log || []).join("<br>");
+  log.scrollTop = log.scrollHeight;
+}
+
+function playerName(id) { const p = state.players.find(x => x.id === id); return p ? p.name : "?"; }
+
+function clickCard(card) {
+  if (["attack", "poison", "heal", "shield"].includes(card.type)) {
+    pendingAction = { type: "card", data: card };
+    renderGame();
+  } else {
+    socket.emit("playCard", { cardId: card.id, targetId: null }, cb);
+  }
+}
+
+function cancelAction() {
+  pendingAction = null;
+  renderGame();
+}
+
+function resolveTarget(targetId) {
+  if (!pendingAction) return;
+  if (pendingAction.type === "card") {
+    socket.emit("playCard", { cardId: pendingAction.data.id, targetId: targetId }, cb);
+  } else if (pendingAction.type === "skill") {
+    socket.emit("useSkill", { targetId: targetId }, cb);
+  }
+  pendingAction = null;
+  renderGame();
+}
+
+function doSkill() {
+  const me = state.players.find(p => p.id === myId);
+  const targets = { warrior: "enemy", guard: "ally", mage: "self", assassin: "self", berserker: "self", priest: "ally", bard: "ally", iceMage: "enemy", rogue: "enemy", gambler: "enemy" };
+  const t = targets[me.roleId];
+  if (t === "self") {
+    socket.emit("useSkill", { targetId: myId }, cb);
+  } else {
+    pendingAction = { type: "skill" };
+    renderGame();
+  }
+}
+function doEnd() { socket.emit("endTurn", {}, cb); }
+function cb(res) { if (res && !res.ok) alert(res.msg); }
+
+function doSurrender() {
+  if (confirm("确定要发起投降吗？队友将收到通知。")) {
+    socket.emit("surrender");
+  }
+}
+function voteSurrender(agree) {
+  closeModal('surrender-modal');
+  socket.emit("voteSurrender", { agree });
+}
+
+socket.on("surrenderRequest", data => {
+  document.getElementById("surrender-text").innerText = `队友 ${data.name} 发起了投降，是否同意？`;
+  document.getElementById("surrender-modal").classList.add("active");
+});
+
+socket.on("stateUpdate", s => {
+  if (s.status === "playing" && state && state.status === "playing") {
+    s.players.forEach(p => {
+      if (lastHps[p.id] !== undefined && p.hp < lastHps[p.id]) showDamageFloat(p.id, lastHps[p.id] - p.hp);
+      lastHps[p.id] = p.hp;
+    });
+  } else {
+    s.players.forEach(p => { lastHps[p.id] = p.hp; });
+  }
+
+  state = s;
+  myId = s.yourId;
+  myHand = s.yourHand || [];
+  pendingAction = null;
+
+  if (s.status === "waiting" || s.status === "choosing") {
+    show("screen-room");
+    renderRoom();
+  } else if (s.status === "playing" || s.status === "ended") {
+    renderGame();
+    if (s.status === "ended") {
+      msg("turn-tip", "游戏结束");
+      document.getElementById("btn-end").disabled = true;
+      document.getElementById("btn-skill").disabled = true;
+      
+      const myPlayer = s.players.find(p => p.id === s.yourId);
+      const myTeam = myPlayer ? myPlayer.team : "";
+      
+      const goTitle = document.getElementById("gameover-title");
+      const goSub = document.getElementById("gameover-subtitle");
+      
+      if (s.winner === myTeam && s.winner !== "None") {
+        goTitle.innerText = "胜 利 !";
+        goTitle.style.color = "#ffd700";
+        goSub.innerText = "恭喜你们击败了对手！";
+      } else {
+        goTitle.innerText = "败 北 ...";
+        goTitle.style.color = "#ff4d4d";
+        goSub.innerText = "胜败乃兵家常事，大侠请重新来过。";
+      }
+      document.getElementById("gameover-modal").classList.add("active");
+    }
+  }
+});
+</script>
+</body>
+</html>

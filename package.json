@@ -1,0 +1,13 @@
+{
+  "name": "card-game-3v3",
+  "version": "1.0.0",
+  "description": "网页版 2v2/3v3 回合制卡牌联机游戏",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  }
+}
